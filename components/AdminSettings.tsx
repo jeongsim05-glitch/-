@@ -1,6 +1,6 @@
 import React from 'react';
 import { GlobalSettings } from '../types';
-import { Settings, Save, AlertTriangle } from 'lucide-react';
+import { Settings, Save, AlertTriangle, RefreshCw, Database } from 'lucide-react';
 
 interface AdminSettingsProps {
   settings: GlobalSettings;
@@ -11,6 +11,13 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, setSettings }) 
   
   const handleChange = (key: keyof GlobalSettings, value: any) => {
     setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleResetData = () => {
+    if (window.confirm("정말 모든 데이터를 초기화하시겠습니까?\n모든 입력 데이터가 삭제되고 데모 데이터로 복구됩니다.")) {
+        localStorage.clear();
+        window.location.reload();
+    }
   };
 
   return (
@@ -117,6 +124,30 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({ settings, setSettings }) 
                AI 기능은 API 사용량을 소모할 수 있습니다.
              </p>
           </div>
+        </div>
+
+        {/* Data Management */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-red-500">
+           <h3 className="text-lg font-bold text-red-700 mb-4 border-b border-red-100 pb-2 flex items-center gap-2">
+            <Database className="w-5 h-5" />
+            데이터 초기화 (Danger Zone)
+           </h3>
+           <div className="flex items-center justify-between">
+               <div>
+                   <p className="font-bold text-gray-800">모든 데이터 삭제 및 초기화</p>
+                   <p className="text-sm text-gray-500 mt-1">
+                       브라우저에 저장된 모든 회원, 재무, 경기 기록을 삭제하고 초기 데모 데이터로 복구합니다.<br/>
+                       <span className="text-red-600 font-bold">이 작업은 되돌릴 수 없습니다.</span>
+                   </p>
+               </div>
+               <button 
+                onClick={handleResetData}
+                className="px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition-colors shadow-lg shadow-red-200 flex items-center gap-2"
+               >
+                   <RefreshCw className="w-5 h-5" />
+                   초기화 실행
+               </button>
+           </div>
         </div>
       </div>
     </div>

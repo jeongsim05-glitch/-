@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import LandingPage from './components/LandingPage';
 import Layout from './components/Layout';
 import Members from './components/Members';
 import Matches from './components/Matches';
@@ -12,8 +13,22 @@ import Coaching from './components/Coaching';
 import Attendance from './components/Attendance';
 import { Member, Match, Rank, Expense, Notice, FinancialRecord, Donation, GameType, GlobalSettings, AttendanceRecord } from './types';
 
+// Storage Keys
+const KEYS = {
+  MEMBERS: 'haeoreum_members',
+  RECORDS: 'haeoreum_records',
+  MATCHES: 'haeoreum_matches',
+  EXPENSES: 'haeoreum_expenses',
+  DONATIONS: 'haeoreum_donations',
+  NOTICES: 'haeoreum_notices',
+  SETTINGS: 'haeoreum_settings',
+  ATTENDANCE: 'haeoreum_attendance',
+};
+
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('financials');
+  const [currentUser, setCurrentUser] = useState<Member | null>(null);
+  const [activeTab, setActiveTab] = useState('members');
+  const [isLoaded, setIsLoaded] = useState(false);
   
   // -- Global Settings --
   const [settings, setSettings] = useState<GlobalSettings>({
@@ -24,13 +39,96 @@ const App: React.FC = () => {
     enableAttendance: false
   });
 
-  // -- Data Initialization --
+  // -- Data States --
   const [members, setMembers] = useState<Member[]>([]);
   const [financialRecords, setFinancialRecords] = useState<Record<string, FinancialRecord>>({});
   const [matches, setMatches] = useState<Match[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [donations, setDonations] = useState<Donation[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
 
+  // --- 1. Load Data on Mount ---
   useEffect(() => {
+    const loadData = () => {
+        try {
+            const savedMembers = localStorage.getItem(KEYS.MEMBERS);
+            const savedRecords = localStorage.getItem(KEYS.RECORDS);
+            const savedMatches = localStorage.getItem(KEYS.MATCHES);
+            const savedExpenses = localStorage.getItem(KEYS.EXPENSES);
+            const savedDonations = localStorage.getItem(KEYS.DONATIONS);
+            const savedNotices = localStorage.getItem(KEYS.NOTICES);
+            const savedSettings = localStorage.getItem(KEYS.SETTINGS);
+            const savedAttendance = localStorage.getItem(KEYS.ATTENDANCE);
+
+            if (savedMembers) {
+                // Load from storage
+                setMembers(JSON.parse(savedMembers));
+                if (savedRecords) setFinancialRecords(JSON.parse(savedRecords));
+                if (savedMatches) setMatches(JSON.parse(savedMatches));
+                if (savedExpenses) setExpenses(JSON.parse(savedExpenses));
+                if (savedDonations) setDonations(JSON.parse(savedDonations));
+                if (savedNotices) setNotices(JSON.parse(savedNotices));
+                if (savedSettings) setSettings(JSON.parse(savedSettings));
+                if (savedAttendance) setAttendanceRecords(JSON.parse(savedAttendance));
+            } else {
+                // Initialize with Demo Data
+                generateDemoData();
+            }
+        } catch (e) {
+            console.error("Failed to load data", e);
+            generateDemoData();
+        } finally {
+            setIsLoaded(true);
+        }
+    };
+
+    loadData();
+  }, []);
+
+  // --- 2. Save Data on Change ---
+  useEffect(() => {
+      if (!isLoaded) return;
+      localStorage.setItem(KEYS.MEMBERS, JSON.stringify(members));
+  }, [members, isLoaded]);
+
+  useEffect(() => {
+      if (!isLoaded) return;
+      localStorage.setItem(KEYS.RECORDS, JSON.stringify(financialRecords));
+  }, [financialRecords, isLoaded]);
+
+  useEffect(() => {
+      if (!isLoaded) return;
+      localStorage.setItem(KEYS.MATCHES, JSON.stringify(matches));
+  }, [matches, isLoaded]);
+
+  useEffect(() => {
+      if (!isLoaded) return;
+      localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
+  }, [expenses, isLoaded]);
+
+  useEffect(() => {
+      if (!isLoaded) return;
+      localStorage.setItem(KEYS.DONATIONS, JSON.stringify(donations));
+  }, [donations, isLoaded]);
+
+  useEffect(() => {
+      if (!isLoaded) return;
+      localStorage.setItem(KEYS.NOTICES, JSON.stringify(notices));
+  }, [notices, isLoaded]);
+
+  useEffect(() => {
+      if (!isLoaded) return;
+      localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
+  }, [settings, isLoaded]);
+
+  useEffect(() => {
+      if (!isLoaded) return;
+      localStorage.setItem(KEYS.ATTENDANCE, JSON.stringify(attendanceRecords));
+  }, [attendanceRecords, isLoaded]);
+
+
+  const generateDemoData = () => {
     // Digitized data from the provided images (103 Regular + 6 Associate)
     const rawData = [
       // --- Regular Members (정회원) ---
@@ -155,12 +253,26 @@ const App: React.FC = () => {
        // 1. Create Member
        const hasLessons = Math.random() > 0.7;
        const lessonDays = hasLessons ? [weekDays[Math.floor(Math.random() * 5)]] : [];
+       
+       let position = data.type === '준회원' ? '준회원' : '회원';
+       let password = undefined;
+       
+       if (data.id === '1') { position = '회장'; password = '1234'; }
+       else if (data.id === '2') { position = '부회장'; password = '1234'; }
+       else if (data.id === '3') { position = '사무국장'; password = '1234'; }
+       else if (data.id === '4') { position = '재무이사'; password = '1234'; }
+       else if (data.id === '5') { position = '총무이사'; password = '1234'; }
+       else if (data.id === '6') { position = '경기이사'; password = '1234'; }
+       else if (data.id === '7') { position = '홍보이사'; password = '1234'; }
+       else if (data.id === '8') { position = '관리이사'; password = '1234'; }
+       else if (data.id === '9') { position = '감사'; password = '1234'; }
 
        const member: Member = {
           id: data.id,
           name: data.name,
           rank: Rank.B,
-          position: data.type === '준회원' ? '준회원' : '회원',
+          position: position,
+          password: password,
           memberType: data.type as '정회원' | '준회원',
           joinDate: data.joinDate,
           tenure: '1년',
@@ -226,17 +338,18 @@ const App: React.FC = () => {
         }
         setMatches(history);
     }
-
-  }, []); // Run once on mount
-
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [donations, setDonations] = useState<Donation[]>([]);
-  const [notices, setNotices] = useState<Notice[]>([]);
+    
+    // Reset others
+    setExpenses([]);
+    setDonations([]);
+    setNotices([]);
+    setAttendanceRecords([]);
+  };
 
   const renderContent = () => {
     switch (activeTab) {
       case 'members':
-        return <Members members={members} setMembers={setMembers} />;
+        return <Members members={members} setMembers={setMembers} currentUser={currentUser} />;
       case 'matches':
         return <Matches members={members} matches={matches} setMatches={setMatches} />;
       case 'financials':
@@ -280,12 +393,23 @@ const App: React.FC = () => {
       case 'admin':
         return <AdminSettings settings={settings} setSettings={setSettings} />;
       default:
-        return <Members members={members} setMembers={setMembers} />;
+        return <Members members={members} setMembers={setMembers} currentUser={currentUser} />;
     }
   };
 
+  // If not logged in, show Landing Page
+  if (!currentUser) {
+      return <LandingPage members={members} onLogin={setCurrentUser} />;
+  }
+
   return (
-    <Layout activeTab={activeTab} setActiveTab={setActiveTab} settings={settings}>
+    <Layout 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        settings={settings} 
+        currentUser={currentUser}
+        onLogout={() => setCurrentUser(null)}
+    >
       {renderContent()}
     </Layout>
   );

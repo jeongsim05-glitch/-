@@ -1,17 +1,34 @@
 import React, { useState } from 'react';
 import { Member, Rank } from '../types';
-import { Upload, Plus, Search, Trash2, Edit2, X } from 'lucide-react';
+import { Upload, Plus, Search, Trash2, Edit2, X, Lock, AlertTriangle, Download } from 'lucide-react';
 import ActionButtons from './ActionButtons';
 
 interface MembersProps {
   members: Member[];
   setMembers: React.Dispatch<React.SetStateAction<Member[]>>;
+  currentUser: Member | null;
 }
 
-const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
+const Members: React.FC<MembersProps> = ({ members, setMembers, currentUser }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Custom Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  // Permission Check
+  const isExecutive = currentUser && ['회장', '부회장', '이사', '국장', '감사', '총무', '재무', '고문'].some(role => currentUser.position.includes(role));
 
   const emptyMember: Member = {
     id: '',
@@ -33,12 +50,17 @@ const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
     accountNumber: '',
     topSize: '',
     bottomSize: '',
-    lessonDays: []
+    lessonDays: [],
+    password: ''
   };
 
   const [formData, setFormData] = useState<Member>(emptyMember);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isExecutive) {
+        alert("임원만 대량 등록이 가능합니다.");
+        return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -48,7 +70,6 @@ const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
       const rows = text.split('\n').slice(1); // Skip header
       const newMembers: Member[] = rows.filter(row => row.trim() !== '').map((row, index) => {
         const cols = row.split(',');
-        // Simple CSV parse mapping
         return {
           ...emptyMember,
           id: `imported-${Date.now()}-${index}`,
@@ -61,7 +82,40 @@ const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
       setMembers(prev => [...prev, ...newMembers]);
       alert(`${newMembers.length}명의 회원이 추가되었습니다.`);
     };
-    reader.readAsText(file); // Default UTF-8
+    reader.readAsText(file);
+  };
+
+  const handleDownloadExcel = () => {
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // BOM for Korean
+      csvContent += "이름,구분,급수,성별,직책,전화번호,계좌번호,상태,레슨요일\n";
+      
+      members.forEach(m => {
+          const status = [];
+          if(m.isSickLeave) status.push("병가");
+          if(m.isCoupleMember) status.push("부부");
+          if(m.isFamilyMember) status.push("가족");
+          
+          const row = [
+              m.name,
+              m.memberType,
+              m.rank,
+              m.gender === 'M' ? '남' : '여',
+              m.position,
+              m.phone,
+              m.accountNumber || '',
+              status.join('/'),
+              m.lessonDays ? m.lessonDays.join(' ') : ''
+          ];
+          csvContent += row.join(",") + "\n";
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `해오름클럽_회원명부_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -83,9 +137,15 @@ const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
   };
 
   const deleteMember = (id: string) => {
-    if (window.confirm('정말 삭제하시겠습니까?')) {
-      setMembers(prev => prev.filter(m => m.id !== id));
-    }
+    setConfirmModal({
+        isOpen: true,
+        title: '회원 삭제',
+        message: '정말 해당 회원을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.',
+        onConfirm: () => {
+            setMembers(prev => prev.filter(m => m.id !== id));
+            setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
+    });
   };
 
   const toggleLessonDay = (day: string) => {
@@ -106,25 +166,66 @@ const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
 
   return (
     <div className="space-y-6">
+      {/* Custom Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 bg-red-50 border-b border-red-100 flex items-center gap-3">
+              <AlertTriangle className="w-6 h-6 text-red-600" />
+              <h3 className="font-bold text-lg text-red-800">{confirmModal.title}</h3>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-700">{confirmModal.message}</p>
+            </div>
+            <div className="p-4 bg-gray-50 flex justify-end gap-2">
+              <button 
+                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium"
+              >
+                취소
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 font-bold"
+              >
+                삭제하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">회원 관리 명부</h2>
           <p className="text-sm text-gray-500">총 회원수: {members.length}명</p>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
+           {isExecutive && (
+               <>
+                <button 
+                    onClick={handleDownloadExcel}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm transition-colors"
+                    title="회원 명부를 엑셀로 저장"
+                >
+                    <Download className="w-4 h-4" />
+                    <span className="hidden md:inline">엑셀 저장</span>
+                </button>
+                <label className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 cursor-pointer text-sm">
+                    <Upload className="w-4 h-4" />
+                    <span className="hidden md:inline">엑셀/CSV 업로드</span>
+                    <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+                </label>
+                <button 
+                    onClick={() => { setFormData(emptyMember); setEditingId(null); setShowModal(true); }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                >
+                    <Plus className="w-4 h-4" />
+                    <span className="hidden md:inline">신규 등록</span>
+                </button>
+               </>
+           )}
            <ActionButtons targetId="members-content" fileName="해오름클럽_회원명부" />
-           <label className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 cursor-pointer text-sm">
-            <Upload className="w-4 h-4" />
-            <span className="hidden md:inline">엑셀/CSV 업로드</span>
-            <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
-          </label>
-          <button 
-            onClick={() => { setFormData(emptyMember); setEditingId(null); setShowModal(true); }}
-            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden md:inline">신규 등록</span>
-          </button>
         </div>
       </div>
 
@@ -153,13 +254,16 @@ const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
                 <th className="px-4 py-3 hidden md:table-cell">계좌번호</th>
                 <th className="px-4 py-3">상태</th>
                 <th className="px-4 py-3">레슨</th>
-                <th className="px-4 py-3 rounded-tr-lg text-right no-print">관리</th>
+                {isExecutive && <th className="px-4 py-3 rounded-tr-lg text-right no-print">관리</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredMembers.map(member => (
                 <tr key={member.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">{member.name}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900 flex items-center gap-2">
+                      {member.name}
+                      {member.password && isExecutive && <Lock className="w-3 h-3 text-orange-400" title="임원 계정(비번설정됨)"/>}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-1 rounded-full font-bold ${member.memberType === '정회원' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'}`}>
                        {member.memberType}
@@ -193,10 +297,12 @@ const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
                           </div>
                       ) : <span className="text-gray-300">-</span>}
                   </td>
-                  <td className="px-4 py-3 text-right no-print">
-                    <button onClick={() => startEdit(member)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4"/></button>
-                    <button onClick={() => deleteMember(member.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4"/></button>
-                  </td>
+                  {isExecutive && (
+                      <td className="px-4 py-3 text-right no-print">
+                        <button onClick={() => startEdit(member)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={() => deleteMember(member.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4"/></button>
+                      </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -265,7 +371,7 @@ const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
 
               <div className="space-y-1">
                 <label className="text-sm font-medium text-gray-700">직책</label>
-                <input type="text" value={formData.position} onChange={e => setFormData({...formData, position: e.target.value})} className="w-full border p-2 rounded" />
+                <input type="text" value={formData.position} onChange={e => setFormData({...formData, position: e.target.value})} className="w-full border p-2 rounded" placeholder="예: 회장, 회원, 재무이사"/>
               </div>
               <div className="space-y-1">
                 <label className="text-sm font-medium text-gray-700">가입일</label>
@@ -306,6 +412,19 @@ const Members: React.FC<MembersProps> = ({ members, setMembers }) => {
                   <input type="checkbox" checked={formData.isCoupleMember} onChange={e => setFormData({...formData, isCoupleMember: e.target.checked})} />
                   <span className="text-sm">부부 회원</span>
                 </label>
+              </div>
+
+              {/* Password Setting for Executives */}
+              <div className="col-span-1 md:col-span-2 bg-orange-50 p-3 rounded border border-orange-100">
+                  <label className="text-sm font-bold text-orange-900 block mb-1">임원 로그인 비밀번호 (선택)</label>
+                  <input 
+                    type="text" 
+                    placeholder="임원일 경우 비밀번호를 설정하세요 (기본값: 1234)" 
+                    value={formData.password || ''} 
+                    onChange={e => setFormData({...formData, password: e.target.value})} 
+                    className="w-full border p-2 rounded text-sm"
+                  />
+                  <p className="text-xs text-orange-600 mt-1">※ 비밀번호가 설정되면 로그인 시 입력해야 합니다. 일반 회원은 비워두세요.</p>
               </div>
 
               <div className="col-span-1 md:col-span-2 pt-4">

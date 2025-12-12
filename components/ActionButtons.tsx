@@ -68,7 +68,7 @@ const CustomDialog: React.FC<{
 
 const ActionButtons: React.FC<ActionButtonsProps> = ({ targetId = 'page-content', fileName = '해오름클럽_문서' }) => {
   const [loading, setLoading] = useState<string | null>(null);
-  const driveLink = "https://drive.google.com/open?id=1dDqT635AHxuDdSlS81_YVyCHg3KASy_5&usp=drive_fs";
+  const driveLink = "https://docs.google.com/spreadsheets/u/1/d/1t-ivTuXVCjD7Dm3rnsYOW1ylFQDyOe-Ij7iNT4jrgOM/edit?usp=drive_fs";
 
   // Modal State
   const [dialogState, setDialogState] = useState<{
@@ -314,7 +314,7 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({ targetId = 'page-content'
           target="_blank" 
           rel="noreferrer" 
           className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm transition-colors" 
-          title="구글 드라이브 폴더 열기"
+          title="구글 스프레드시트 폴더 열기"
         >
           <ExternalLink className="w-4 h-4" />
           <span className="hidden sm:inline">Drive 열기</span>

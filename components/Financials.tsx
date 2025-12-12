@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Member, FinancialRecord, Expense, Donation } from '../types';
-import { DollarSign, CheckSquare, TrendingUp, AlertCircle, Settings, X } from 'lucide-react';
+import { DollarSign, CheckSquare, TrendingUp, AlertCircle, Settings, X, Plus, Trash2, Camera, FileSpreadsheet, Download, AlertTriangle } from 'lucide-react';
+import { parseReceipt } from '../services/geminiService';
 import ActionButtons from './ActionButtons';
 
 interface FinancialsProps {
@@ -30,17 +31,32 @@ const Financials: React.FC<FinancialsProps> = ({
   const [year, setYear] = useState(currentYear);
   const [activeTab, setActiveTab] = useState<'income' | 'expense' | 'donation'>('income');
   const [showSettings, setShowSettings] = useState(false);
+  const [loadingReceipt, setLoadingReceipt] = useState(false);
   
+  // Custom Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
   // Expense Form State
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [newExpense, setNewExpense] = useState<Partial<Expense>>({
     date: new Date().toISOString().split('T')[0],
     amount: 0,
     description: '',
-    category: ''
+    category: '기타'
   });
 
   // Donation Form State
+  const [showDonationModal, setShowDonationModal] = useState(false);
   const [newDonation, setNewDonation] = useState<Partial<Donation>>({
     date: new Date().toISOString().split('T')[0],
     eventName: '',
@@ -150,8 +166,187 @@ const Financials: React.FC<FinancialsProps> = ({
     });
   };
 
+  // --- Excel Export Handler ---
+  const handleDownloadExcel = () => {
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // Add BOM for Korean support
+    let filename = "";
+
+    if (activeTab === 'income') {
+        filename = `해오름클럽_회비수입_${year}년.csv`;
+        // Header
+        const header = ["이름", "구분", ...months.map(m => `${m}월`), "총납부액", "미납액"].join(",");
+        csvContent += header + "\n";
+        
+        // Rows
+        members.forEach(member => {
+            const rec = getRecord(member.id);
+            const fee = getMemberFee(member);
+            const row = [member.name, member.memberType];
+            
+            let paidSum = 0;
+            let unpaidSum = 0;
+
+            months.forEach(m => {
+                const paid = rec.payments[m];
+                if (paid) {
+                    row.push(String(paid));
+                    paidSum += paid;
+                } else if (rec.exemptMonths.includes(m)) {
+                    row.push("면제");
+                } else if (isBeforeJoinDate(member, m, year)) {
+                    row.push("-");
+                } else {
+                    row.push("미납");
+                    unpaidSum += fee;
+                }
+            });
+            row.push(String(paidSum));
+            row.push(String(unpaidSum));
+            csvContent += row.join(",") + "\n";
+        });
+
+    } else if (activeTab === 'expense') {
+        filename = `해오름클럽_지출내역_${year}년.csv`;
+        csvContent += "날짜,항목,내용,금액\n";
+        expenses.forEach(exp => {
+            csvContent += `${exp.date},${exp.category},"${exp.description.replace(/"/g, '""')}",${exp.amount}\n`;
+        });
+
+    } else if (activeTab === 'donation') {
+        filename = `해오름클럽_찬조내역_${year}년.csv`;
+        csvContent += "날짜,행사명,찬조자,금액/물품\n";
+        donations.forEach(don => {
+            const amountStr = don.amount > 0 ? don.amount : don.item;
+            csvContent += `${don.date},"${don.eventName.replace(/"/g, '""')}",${don.donorName},"${amountStr}"\n`;
+        });
+    }
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // --- Expense Handlers ---
+  const handleReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoadingReceipt(true);
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = async () => {
+        const base64 = reader.result as string;
+        try {
+            const data = await parseReceipt(base64.split(',')[1]);
+            setNewExpense(prev => ({
+                ...prev,
+                date: data.date || prev.date,
+                amount: data.amount || prev.amount,
+                description: data.description || prev.description,
+                category: data.category || prev.category
+            }));
+            alert("영수증 분석이 완료되었습니다. 내용을 확인해주세요.");
+        } catch (err) {
+            alert("영수증 분석에 실패했습니다. 직접 입력해주세요.");
+        } finally {
+            setLoadingReceipt(false);
+        }
+    };
+  };
+
+  const saveExpense = () => {
+      if (!newExpense.description || newExpense.description.trim() === '') {
+          alert("지출 내용을 입력해주세요.");
+          return;
+      }
+      
+      const expenseToAdd: Expense = {
+          id: `exp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          date: newExpense.date || new Date().toISOString().split('T')[0],
+          amount: Number(newExpense.amount) || 0,
+          description: newExpense.description || '',
+          category: newExpense.category || '기타',
+          receiptUrl: newExpense.receiptUrl
+      };
+
+      setExpenses(prev => [...prev, expenseToAdd]);
+      setShowExpenseModal(false);
+      setNewExpense({ date: new Date().toISOString().split('T')[0], amount: 0, description: '', category: '기타' });
+  };
+
+  const deleteExpense = (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setConfirmModal({
+        isOpen: true,
+        title: '지출 내역 삭제',
+        message: '정말 이 지출 내역을 삭제하시겠습니까?',
+        onConfirm: () => {
+          setExpenses(prev => prev.filter(e => e.id !== id));
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
+      });
+  };
+
+  // --- Donation Handlers ---
+  const saveDonation = () => {
+      if (!newDonation.donorName || (!newDonation.amount && !newDonation.item)) {
+          alert("기부자와 금액(또는 물품)을 입력해주세요.");
+          return;
+      }
+      setDonations(prev => [...prev, { ...newDonation, id: `don-${Date.now()}` } as Donation]);
+      setShowDonationModal(false);
+      setNewDonation({ date: new Date().toISOString().split('T')[0], eventName: '', donorName: '', amount: 0, item: '' });
+  };
+
+  const deleteDonation = (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setConfirmModal({
+        isOpen: true,
+        title: '찬조 내역 삭제',
+        message: '정말 이 찬조 내역을 삭제하시겠습니까?',
+        onConfirm: () => {
+          setDonations(prev => prev.filter(d => d.id !== id));
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
+      });
+  };
+
+
   return (
     <div className="space-y-6">
+      {/* Custom Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 bg-red-50 border-b border-red-100 flex items-center gap-3">
+              <AlertTriangle className="w-6 h-6 text-red-600" />
+              <h3 className="font-bold text-lg text-red-800">{confirmModal.title}</h3>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-700">{confirmModal.message}</p>
+            </div>
+            <div className="p-4 bg-gray-50 flex justify-end gap-2">
+              <button 
+                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 font-medium"
+              >
+                취소
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 font-bold"
+              >
+                삭제하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">재무 관리</h2>
@@ -176,7 +371,24 @@ const Financials: React.FC<FinancialsProps> = ({
             </button>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+             <button 
+                onClick={handleDownloadExcel}
+                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-sm transition-colors"
+                title="현재 탭의 데이터를 엑셀(CSV)로 다운로드합니다"
+            >
+                <Download className="w-4 h-4" />
+                <span>엑셀 다운로드</span>
+            </button>
+             <a 
+                href="https://docs.google.com/spreadsheets/u/1/d/1t-ivTuXVCjD7Dm3rnsYOW1ylFQDyOe-Ij7iNT4jrgOM/edit?usp=drive_fs" 
+                target="_blank" 
+                rel="noreferrer"
+                className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm transition-colors"
+            >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>시트 열기</span>
+            </a>
             <button 
                 onClick={() => setShowSettings(true)}
                 className="flex items-center gap-2 px-3 py-2 bg-slate-700 text-white rounded hover:bg-slate-800 text-sm transition-colors"
@@ -184,11 +396,11 @@ const Financials: React.FC<FinancialsProps> = ({
                 <Settings className="w-4 h-4" />
                 <span>설정</span>
             </button>
-            <ActionButtons targetId="financials-content" fileName="재무관리_결산" />
+            <ActionButtons targetId="financials-content" fileName={`재무관리_${activeTab}`} />
         </div>
       </div>
 
-      <div id="financials-content" className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+      <div id="financials-content" className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 min-h-[500px]">
       {activeTab === 'income' && (
         <div className="space-y-4">
           {/* Summary Dashboard */}
@@ -333,9 +545,196 @@ const Financials: React.FC<FinancialsProps> = ({
         </div>
       )}
 
+      {activeTab === 'expense' && (
+          <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                  <h3 className="font-bold text-lg">지출 내역 목록</h3>
+                  <button 
+                    onClick={() => setShowExpenseModal(true)}
+                    className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+                  >
+                      <Plus className="w-4 h-4"/> 지출 등록
+                  </button>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                  <table className="w-full text-sm text-left">
+                      <thead className="bg-gray-50 text-gray-700">
+                          <tr>
+                              <th className="p-3">날짜</th>
+                              <th className="p-3">항목 (Category)</th>
+                              <th className="p-3">내용</th>
+                              <th className="p-3 text-right">금액</th>
+                              <th className="p-3 text-center">관리</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                          {expenses.length === 0 ? (
+                              <tr><td colSpan={5} className="p-6 text-center text-gray-400">등록된 지출 내역이 없습니다.</td></tr>
+                          ) : (
+                              expenses.sort((a,b) => b.date.localeCompare(a.date)).map(exp => (
+                                  <tr key={exp.id} className="hover:bg-gray-50">
+                                      <td className="p-3">{exp.date}</td>
+                                      <td className="p-3"><span className="px-2 py-1 bg-gray-100 rounded text-xs">{exp.category}</span></td>
+                                      <td className="p-3">{exp.description}</td>
+                                      <td className="p-3 text-right font-bold text-red-600">-{exp.amount.toLocaleString()}</td>
+                                      <td className="p-3 text-center">
+                                          <button type="button" onClick={(e) => deleteExpense(exp.id, e)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
+                                      </td>
+                                  </tr>
+                              ))
+                          )}
+                          <tr className="bg-red-50 font-bold border-t-2 border-red-100">
+                              <td colSpan={3} className="p-3 text-center">총 지출 합계</td>
+                              <td className="p-3 text-right text-red-700">-{expenses.reduce((a,c) => a + c.amount, 0).toLocaleString()}</td>
+                              <td></td>
+                          </tr>
+                      </tbody>
+                  </table>
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'donation' && (
+          <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                  <h3 className="font-bold text-lg">찬조금(물품) 내역</h3>
+                  <button 
+                    onClick={() => setShowDonationModal(true)}
+                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                  >
+                      <Plus className="w-4 h-4"/> 찬조 등록
+                  </button>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                  <table className="w-full text-sm text-left">
+                      <thead className="bg-gray-50 text-gray-700">
+                          <tr>
+                              <th className="p-3">날짜</th>
+                              <th className="p-3">행사명</th>
+                              <th className="p-3">찬조자</th>
+                              <th className="p-3 text-right">금액/물품</th>
+                              <th className="p-3 text-center">관리</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                          {donations.length === 0 ? (
+                              <tr><td colSpan={5} className="p-6 text-center text-gray-400">등록된 찬조 내역이 없습니다.</td></tr>
+                          ) : (
+                              donations.sort((a,b) => b.date.localeCompare(a.date)).map(don => (
+                                  <tr key={don.id} className="hover:bg-gray-50">
+                                      <td className="p-3">{don.date}</td>
+                                      <td className="p-3 font-medium">{don.eventName}</td>
+                                      <td className="p-3">{don.donorName}</td>
+                                      <td className="p-3 text-right font-bold text-blue-600">
+                                          {don.amount > 0 ? `+${don.amount.toLocaleString()}` : don.item}
+                                      </td>
+                                      <td className="p-3 text-center">
+                                          <button type="button" onClick={(e) => deleteDonation(don.id, e)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
+                                      </td>
+                                  </tr>
+                              ))
+                          )}
+                           <tr className="bg-blue-50 font-bold border-t-2 border-blue-100">
+                              <td colSpan={3} className="p-3 text-center">총 찬조금 합계 (물품 제외)</td>
+                              <td className="p-3 text-right text-blue-700">+{donations.reduce((a,c) => a + c.amount, 0).toLocaleString()}</td>
+                              <td></td>
+                          </tr>
+                      </tbody>
+                  </table>
+              </div>
+          </div>
+      )}
+      </div>
+
+      {/* Expense Modal */}
+      {showExpenseModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-lg">지출 내역 등록</h3>
+                      <button onClick={() => setShowExpenseModal(false)}><X className="w-5 h-5"/></button>
+                  </div>
+                  
+                  <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                      <label className="flex items-center gap-2 cursor-pointer text-blue-700 font-bold text-sm justify-center">
+                          <Camera className="w-5 h-5"/>
+                          {loadingReceipt ? "영수증 분석 중..." : "영수증 사진으로 자동 입력 (AI)"}
+                          <input type="file" accept="image/*" onChange={handleReceiptUpload} className="hidden" disabled={loadingReceipt}/>
+                      </label>
+                  </div>
+
+                  <div className="space-y-3">
+                      <div>
+                          <label className="block text-sm font-medium mb-1">날짜</label>
+                          <input type="date" value={newExpense.date} onChange={e => setNewExpense({...newExpense, date: e.target.value})} className="w-full border p-2 rounded"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium mb-1">항목</label>
+                          <select value={newExpense.category} onChange={e => setNewExpense({...newExpense, category: e.target.value})} className="w-full border p-2 rounded">
+                              {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium mb-1">금액</label>
+                          <input type="number" value={newExpense.amount} onChange={e => setNewExpense({...newExpense, amount: Number(e.target.value)})} className="w-full border p-2 rounded" placeholder="숫자만 입력"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium mb-1">내용 (사용처)</label>
+                          <input type="text" value={newExpense.description} onChange={e => setNewExpense({...newExpense, description: e.target.value})} className="w-full border p-2 rounded" placeholder="예: 이마트 (음료 구입)" autoFocus/>
+                      </div>
+                      <button onClick={saveExpense} className="w-full bg-red-600 text-white py-2 rounded font-bold hover:bg-red-700 mt-2">
+                          저장하기
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Donation Modal */}
+      {showDonationModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-lg">찬조 내역 등록</h3>
+                      <button onClick={() => setShowDonationModal(false)}><X className="w-5 h-5"/></button>
+                  </div>
+                  <div className="space-y-3">
+                      <div>
+                          <label className="block text-sm font-medium mb-1">날짜</label>
+                          <input type="date" value={newDonation.date} onChange={e => setNewDonation({...newDonation, date: e.target.value})} className="w-full border p-2 rounded"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium mb-1">행사명</label>
+                          <input type="text" value={newDonation.eventName} onChange={e => setNewDonation({...newDonation, eventName: e.target.value})} className="w-full border p-2 rounded" placeholder="예: 3월 월례회의"/>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium mb-1">찬조자</label>
+                          <input type="text" value={newDonation.donorName} onChange={e => setNewDonation({...newDonation, donorName: e.target.value})} className="w-full border p-2 rounded"/>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="block text-sm font-medium mb-1">현금 (원)</label>
+                            <input type="number" value={newDonation.amount} onChange={e => setNewDonation({...newDonation, amount: Number(e.target.value), item: ''})} className="w-full border p-2 rounded" placeholder="0"/>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">또는 물품</label>
+                            <input type="text" value={newDonation.item} onChange={e => setNewDonation({...newDonation, item: e.target.value, amount: 0})} className="w-full border p-2 rounded" placeholder="예: 라켓 1점"/>
+                        </div>
+                      </div>
+                      
+                      <button onClick={saveDonation} className="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700 mt-2">
+                          저장하기
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Settings Modal */}
       {showSettings && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
               <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-sm">
                   <div className="flex justify-between items-center mb-4">
                       <h3 className="font-bold text-lg">재무 환경 설정</h3>
@@ -359,15 +758,6 @@ const Financials: React.FC<FinancialsProps> = ({
               </div>
           </div>
       )}
-
-      {/* Expense & Donation sections unchanged but required to compile */}
-      {activeTab === 'expense' && (
-          <div className="p-10 text-center">지출 관리 (기존 코드 유지)</div>
-      )}
-      {activeTab === 'donation' && (
-          <div className="p-10 text-center">찬조금 관리 (기존 코드 유지)</div>
-      )}
-      </div>
     </div>
   );
 };
