@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>해오름클럽 매니저</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Noto Sans KR', sans-serif;
+      }
+      @media print {
+        @page {
+          size: auto;
+          margin: 10mm;
+        }
+        body, html {
+          height: auto !important;
+          overflow: visible !important;
+          background-color: white !important;
+        }
+        #root, main {
+          height: auto !important;
+          overflow: visible !important;
+          display: block !important;
+        }
+        /* Hide sidebar, headers, and specific no-print elements */
+        aside, header, .no-print {
+          display: none !important;
+        }
+        /* Ensure content expands fully */
+        #page-content, .print-area {
+          display: block !important;
+          width: 100% !important;
+          height: auto !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          border: none !important;
+          overflow: visible !important;
+        }
+        /* Expand scrollable tables for print */
+        div[class*="overflow-"], div[class*="h-"] {
+          height: auto !important;
+          overflow: visible !important;
+          max-height: none !important;
+        }
+        table {
+          width: 100% !important;
+          table-layout: auto !important;
+        }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.560.0",
+    "recharts": "https://esm.sh/recharts@^3.5.1",
+    "html2canvas": "https://esm.sh/html2canvas@1.4.1",
+    "jspdf": "https://esm.sh/jspdf@2.5.1"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
